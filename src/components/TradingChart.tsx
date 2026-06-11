@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from "react";
-import { Maximize2, Minimize2 } from "lucide-react";
+import { Maximize2, Minimize2, BrainCircuit } from "lucide-react";
 import {
   createChart,
   CandlestickSeries,
@@ -28,9 +28,26 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import type { Candle, Trade, StrategyAnalysis, ActiveIndicator, IndicatorData } from "@/types";
 import type { WsCandle, WsSignal } from "@/hooks/useWebSocket";
+import type { SMCData, SMCVisibility } from "@/types/smc";
+import { SMCOverlay } from "@/components/SMCOverlay";
+import { SMCPanel } from "@/components/SMCPanel";
 
 const TIMEFRAMES = ["1m", "5m", "15m", "30m", "1h", "4h", "1d"] as const;
 const SYMBOLS = ["BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT"];
+
+const DEFAULT_SMC_VISIBILITY: SMCVisibility = {
+  internal_structure: true,
+  swing_structure: true,
+  swing_points: false,
+  strong_weak: true,
+  internal_order_blocks: true,
+  swing_order_blocks: false,
+  fvg: false,
+  eqh_eql: true,
+  zones: false,
+  mtf_levels: false,
+  trend_candles: false,
+};
 
 interface Props {
   trades?: { price: number; side: string; time: string }[];
@@ -107,6 +124,9 @@ export function TradingChart({ trades, openTrades, analysis, liveCandle, liveSig
   const [priceChange, setPriceChange] = useState({ change: 0, percent: 0 });
   const [showFib, setShowFib] = useState(false);
   const [showAnalysis, setShowAnalysis] = useState(true);
+  const [showSMC, setShowSMC] = useState(false);
+  const [smcVisibility, setSmcVisibility] = useState<SMCVisibility>(DEFAULT_SMC_VISIBILITY);
+  const [smcData, setSmcData] = useState<SMCData | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [indicatorData, setIndicatorData] = useState<Map<string, IndicatorData>>(new Map());
 
@@ -348,6 +368,19 @@ export function TradingChart({ trades, openTrades, analysis, liveCandle, liveSig
     fetchIndicators();
   }, [activeIndicators, symbol, timeframe]);
 
+  useEffect(() => {
+    if (!showSMC) return;
+    const fetchSMC = async () => {
+      try {
+        const data = await api.getIndicatorData(symbol, timeframe, "smc", {});
+        if (data.data && data.data.length > 0) {
+          setSmcData(data.data[0] as unknown as SMCData);
+        }
+      } catch {}
+    };
+    fetchSMC();
+  }, [showSMC, symbol, timeframe, refreshKey]);
+
   const clearOverlays = useCallback(() => {
     const chart = chartRef.current;
     if (!chart) return;
@@ -564,6 +597,16 @@ export function TradingChart({ trades, openTrades, analysis, liveCandle, liveSig
           <Button variant={showAnalysis && !!analysis ? "default" : "outline"} size="sm" className="h-8 px-2 text-xs" onClick={() => setShowAnalysis(!showAnalysis)}>
             Levels
           </Button>
+          <Button
+            variant={showSMC ? "default" : "outline"}
+            size="sm"
+            className="h-8 px-2 text-xs gap-1"
+            onClick={() => setShowSMC(!showSMC)}
+            title="Smart Money Concepts"
+          >
+            <BrainCircuit className="size-3.5" />
+            SMC
+          </Button>
           <Button variant="ghost" size="icon" className="h-8 w-8" onClick={toggleFullscreen} title={isFullscreen ? "Exit fullscreen" : "Fullscreen"}>
             {isFullscreen ? <Minimize2 className="size-4" /> : <Maximize2 className="size-4" />}
           </Button>
@@ -611,6 +654,22 @@ export function TradingChart({ trades, openTrades, analysis, liveCandle, liveSig
         )}
         <div ref={containerRef} className="w-full" style={{ height: 500 }} />
       </div>
+
+      {showSMC && (
+        <div className="space-y-2">
+          <SMCPanel
+            visibility={smcVisibility}
+            onChange={setSmcVisibility}
+            onClose={() => setShowSMC(false)}
+          />
+          <SMCOverlay
+            chart={chartRef.current}
+            candleSeries={candleSeriesRef.current}
+            smcData={smcData}
+            visibility={smcVisibility}
+          />
+        </div>
+      )}
     </div>
   );
 }

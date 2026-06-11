@@ -61,12 +61,13 @@ export const api = {
   getIndicatorList: () => get<IndicatorInfo[]>("/indicators/list"),
   getIndicatorData: (symbol: string, timeframe: string, indicator: string, params?: Record<string, unknown>) => {
     const search = new URLSearchParams({ symbol, timeframe, indicator });
-    if (params?.period) search.set("period", String(params.period));
-    if (params?.fast_period) search.set("fast_period", String(params.fast_period));
-    if (params?.slow_period) search.set("slow_period", String(params.slow_period));
-    if (params?.signal_period) search.set("signal_period", String(params.signal_period));
-    if (params?.lookback) search.set("lookback", String(params.lookback));
-    if (params?.source) search.set("source", String(params.source));
+    if (params) {
+      for (const [key, value] of Object.entries(params)) {
+        if (value !== undefined && value !== null) {
+          search.set(key, String(value));
+        }
+      }
+    }
     return get<IndicatorData>(`/indicators/?${search}`);
   },
   analyzeStrategy: (strategy_name: string, symbol: string, timeframe: string) =>
