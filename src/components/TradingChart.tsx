@@ -26,7 +26,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
-import type { Candle, Trade, StrategyAnalysis } from "@/types";
+import type { Candle, Trade, StrategyAnalysis, ActiveIndicator, IndicatorData } from "@/types";
 import type { WsCandle, WsSignal } from "@/hooks/useWebSocket";
 
 const TIMEFRAMES = ["1m", "5m", "15m", "30m", "1h", "4h", "1d"] as const;
@@ -39,10 +39,15 @@ interface Props {
   liveCandle?: WsCandle | null;
   liveSignal?: WsSignal | null;
   refreshKey?: number;
+  activeIndicators?: ActiveIndicator[];
 }
 
 function toLwtTime(ts: string): Time {
   return (new Date(ts).getTime() / 1000) as Time;
+}
+
+function toLwtTimeFromUnix(ts: number): Time {
+  return ts as Time;
 }
 
 const FIB_COLORS = ["#9333ea", "#a855f7", "#c084fc", "#e879f9", "#d946ef", "#ec4899", "#f472b6"];
@@ -94,7 +99,7 @@ function findSwingLow(candles: Candle[], lookback = 50): { index: number; price:
 
 const FIB_LEVELS = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1];
 
-export function TradingChart({ trades, openTrades, analysis, liveCandle, liveSignal, refreshKey = 0 }: Props) {
+export function TradingChart({ trades, openTrades, analysis, liveCandle, liveSignal, refreshKey = 0, activeIndicators = [] }: Props) {
   const [symbol, setSymbol] = useState("BTCUSDT");
   const [timeframe, setTimeframe] = useState("1h");
   const [loading, setLoading] = useState(true);
@@ -103,6 +108,7 @@ export function TradingChart({ trades, openTrades, analysis, liveCandle, liveSig
   const [showFib, setShowFib] = useState(false);
   const [showAnalysis, setShowAnalysis] = useState(true);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [indicatorData, setIndicatorData] = useState<Map<string, IndicatorData>>(new Map());
 
   const containerRef = useRef<HTMLDivElement>(null);
   const chartWrapperRef = useRef<HTMLDivElement>(null);
@@ -111,10 +117,10 @@ export function TradingChart({ trades, openTrades, analysis, liveCandle, liveSig
   const volumeSeriesRef = useRef<ISeriesApi<"Histogram"> | null>(null);
   const markersRef = useRef<ReturnType<typeof createSeriesMarkers<Time>> | null>(null);
   const overlaySeriesRefs = useRef<ISeriesApi<"Line">[]>([]);
+  const indicatorSeriesRefs = useRef<Map<string, ISeriesApi<"Line">>>(new Map());
   const candlesRef = useRef<Candle[]>([]);
   const fullCandleDataRef = useRef<{ time: Time; open: number; high: number; low: number; close: number }[]>([]);
   const fullVolumeDataRef = useRef<{ time: Time; value: number; color: string }[]>([]);
-  const isInitialLoadRef = useRef(false);
 
   const fetchAndSetCandles = useCallback(async (sym: string, tf: string): Promise<Candle[] | undefined> => {
     try {
@@ -138,7 +144,6 @@ export function TradingChart({ trades, openTrades, analysis, liveCandle, liveSig
         const first = data.candles[0];
         const change = last.close - first.open;
         setPriceChange({ change, percent: first.open !== 0 ? (change / first.open) * 100 : 0 });
-        isInitialLoadRef.current = true;
         return data.candles;
       }
     } catch {}
@@ -161,7 +166,6 @@ export function TradingChart({ trades, openTrades, analysis, liveCandle, liveSig
     const first = fallback[0];
     const change = last.close - first.open;
     setPriceChange({ change, percent: first.open !== 0 ? (change / first.open) * 100 : 0 });
-    isInitialLoadRef.current = true;
     return fallback;
   }, []);
 
@@ -255,7 +259,6 @@ export function TradingChart({ trades, openTrades, analysis, liveCandle, liveSig
   useEffect(() => {
     const run = async () => {
       setLoading(true);
-      isInitialLoadRef.current = false;
       const c = await fetchAndSetCandles(symbol, timeframe);
       setLoading(false);
 
@@ -271,6 +274,16 @@ export function TradingChart({ trades, openTrades, analysis, liveCandle, liveSig
     };
     run();
   }, [symbol, timeframe, refreshKey, fetchAndSetCandles]);
+
+  useEffect(() => {
+    if (candleSeriesRef.current && fullCandleDataRef.current.length > 0) {
+      candleSeriesRef.current.setData(fullCandleDataRef.current);
+    }
+    if (volumeSeriesRef.current && fullVolumeDataRef.current.length > 0) {
+      volumeSeriesRef.current.setData(fullVolumeDataRef.current);
+    }
+    drawIndicatorOverlays(candlesRef.current);
+  }, [indicatorData]);
 
   useEffect(() => {
     if (!liveCandle || liveCandle.symbol !== symbol || liveCandle.timeframe !== timeframe) return;
@@ -321,17 +334,77 @@ export function TradingChart({ trades, openTrades, analysis, liveCandle, liveSig
     return () => document.removeEventListener("fullscreenchange", handler);
   }, []);
 
+  useEffect(() => {
+    const fetchIndicators = async () => {
+      const newData = new Map<string, IndicatorData>();
+      for (const ind of activeIndicators) {
+        try {
+          const data = await api.getIndicatorData(symbol, timeframe, ind.name, ind.params);
+          newData.set(ind.id, data);
+        } catch {}
+      }
+      setIndicatorData(newData);
+    };
+    fetchIndicators();
+  }, [activeIndicators, symbol, timeframe]);
+
   const clearOverlays = useCallback(() => {
     const chart = chartRef.current;
     if (!chart) return;
     overlaySeriesRefs.current.forEach((s) => chart.removeSeries(s));
     overlaySeriesRefs.current = [];
+    indicatorSeriesRefs.current.forEach((s) => chart.removeSeries(s));
+    indicatorSeriesRefs.current.clear();
   }, []);
+
+  const drawIndicatorOverlays = useCallback((candles: Candle[]) => {
+    const chart = chartRef.current;
+    if (!chart) return;
+
+    const currentIndicatorIds = new Set(indicatorSeriesRefs.current.keys());
+    const newIndicatorIds = new Set(activeIndicators.map((i) => i.id));
+
+    for (const id of currentIndicatorIds) {
+      if (!newIndicatorIds.has(id)) {
+        const series = indicatorSeriesRefs.current.get(id);
+        if (series) chart.removeSeries(series);
+        indicatorSeriesRefs.current.delete(id);
+      }
+    }
+
+    for (const ind of activeIndicators) {
+      const existing = indicatorSeriesRefs.current.get(ind.id);
+      const indResult = indicatorData.get(ind.id);
+      if (!indResult || !indResult.data.length) continue;
+
+      const lineData: LineData[] = indResult.data
+        .filter((p) => p.value !== undefined)
+        .map((p) => ({
+          time: toLwtTimeFromUnix(p.time),
+          value: p.value!,
+        }));
+
+      if (!lineData.length) continue;
+
+      if (existing) {
+        existing.setData(lineData);
+      } else {
+        const title = `${ind.name.toUpperCase()} (${ind.params.period ?? ""})`;
+        const series = chart.addSeries(LineSeries, {
+          color: ind.color,
+          lineWidth: 2,
+          lastValueVisible: true,
+          title,
+        });
+        series.setData(lineData);
+        indicatorSeriesRefs.current.set(ind.id, series);
+      }
+    }
+  }, [activeIndicators, indicatorData]);
 
   const drawOverlays = useCallback((candles: Candle[]) => {
     const chart = chartRef.current;
     if (!chart) return;
-    clearOverlays();
 
     if (showFib && candles.length > 0) {
       const swingHigh = findSwingHigh(candles);
@@ -398,11 +471,22 @@ export function TradingChart({ trades, openTrades, analysis, liveCandle, liveSig
         overlaySeriesRefs.current.push(tp);
       }
     }
-  }, [showFib, showAnalysis, analysis, openTrades, clearOverlays]);
+  }, [showFib, showAnalysis, analysis, openTrades]);
 
   useEffect(() => {
+    const chart = chartRef.current;
+    if (!chart) return;
+
+    const overlaysToKeep: ISeriesApi<"Line">[] = [];
+    overlaySeriesRefs.current.forEach((s) => {
+      overlaysToKeep.push(s);
+    });
+
+    overlaySeriesRefs.current = overlaysToKeep;
+
     drawOverlays(candlesRef.current);
-  }, [showFib, showAnalysis, analysis, drawOverlays]);
+    drawIndicatorOverlays(candlesRef.current);
+  }, [showFib, showAnalysis, analysis, drawOverlays, drawIndicatorOverlays]);
 
   useEffect(() => {
     if (!markersRef.current) return;

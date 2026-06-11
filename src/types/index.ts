@@ -107,3 +107,33 @@ export interface StrategyAnalysis {
   take_profit: number | null;
   metadata: Record<string, unknown>;
 }
+
+export interface IndicatorInfo {
+  name: string;
+  description: string;
+}
+
+export interface IndicatorData {
+  indicator: string;
+  params: Record<string, unknown>;
+  data: IndicatorPoint[];
+}
+
+export interface IndicatorPoint {
+  time: number;
+  value?: number;
+  macd?: number;
+  signal?: number;
+  histogram?: number;
+  level?: number;
+  label?: string;
+  direction?: string;
+  type?: string;
+}
+
+export interface ActiveIndicator {
+  id: string;
+  name: string;
+  params: Record<string, unknown>;
+  color: string;
+}

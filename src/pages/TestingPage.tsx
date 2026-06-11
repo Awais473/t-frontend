@@ -1,13 +1,15 @@
-import { useReducer, useEffect, useState } from "react";
-import { RefreshCw, Radio, RadioTower } from "lucide-react";
+import { useReducer, useEffect, useState, useCallback } from "react";
+import { RefreshCw, Radio, RadioTower, Plus, X } from "lucide-react";
 import { api } from "@/api/client";
 import { TradingChart } from "@/components/TradingChart";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { testingReducer, initialTestingState } from "@/state/testing/reducer";
 import { fetchTestingData, toggleActiveStrategy, fetchAnalysis } from "@/state/testing/actions";
 import type { WsCandle, WsSignal } from "@/hooks/useWebSocket";
+import type { IndicatorInfo, ActiveIndicator } from "@/types";
 
 interface Props {
   liveCandle: WsCandle | null;
@@ -17,10 +19,20 @@ interface Props {
 const TIMEFRAMES = ["1m", "5m", "15m", "30m", "1h", "4h", "1d"] as const;
 const SYMBOLS = ["BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT"];
 
+const INDICATOR_COLORS = [
+  "#3b82f6", "#ef4444", "#22c55e", "#f59e0b", "#8b5cf6",
+  "#ec4899", "#14b8a6", "#f97316", "#6366f1", "#84cc16",
+];
+
+let indicatorIdCounter = 0;
+
 export function TestingPage({ liveCandle, liveSignal }: Props) {
   const [state, dispatch] = useReducer(testingReducer, initialTestingState);
   const [refreshKey, setRefreshKey] = useState(0);
   const [liveMode, setLiveMode] = useState(true);
+
+  const [indicatorPeriod, setIndicatorPeriod] = useState("20");
+  const [activeIndicators, setActiveIndicators] = useState<ActiveIndicator[]>([]);
 
   useEffect(() => { fetchTestingData(dispatch); }, []);
 
@@ -33,6 +45,28 @@ export function TestingPage({ liveCandle, liveSignal }: Props) {
   useEffect(() => {
     fetchAnalysis(dispatch, state.selStrategy, state.selSymbol, state.selTimeframe);
   }, [state.selStrategy, state.selSymbol, state.selTimeframe]);
+
+  const addIndicator = useCallback(() => {
+    const color = INDICATOR_COLORS[indicatorIdCounter % INDICATOR_COLORS.length];
+    const period = parseInt(indicatorPeriod) || 20;
+    const existing = activeIndicators.find(
+      (i) => i.name === "ema" && i.params.period === period
+    );
+    if (existing) return;
+    setActiveIndicators((prev) => [
+      ...prev,
+      {
+        id: `ind_${++indicatorIdCounter}`,
+        name: "ema",
+        params: { period },
+        color,
+      },
+    ]);
+  }, [indicatorPeriod, activeIndicators]);
+
+  const removeIndicator = useCallback((id: string) => {
+    setActiveIndicators((prev) => prev.filter((i) => i.id !== id));
+  }, []);
 
   const chartTrades = state.trades
     .filter((t) => t.status === "CLOSED")
@@ -53,6 +87,7 @@ export function TestingPage({ liveCandle, liveSignal }: Props) {
         refreshKey={refreshKey}
         liveCandle={liveMode ? liveCandle : undefined}
         liveSignal={liveMode ? liveSignal : undefined}
+        activeIndicators={activeIndicators}
       />
 
       <div className="flex flex-wrap items-end gap-4 rounded-xl border p-4">
@@ -115,6 +150,42 @@ export function TestingPage({ liveCandle, liveSignal }: Props) {
         <Button variant="ghost" size="icon" onClick={() => setRefreshKey((k) => k + 1)} title="Refresh chart">
           <RefreshCw className="size-4" />
         </Button>
+      </div>
+
+      <div className="flex flex-wrap items-end gap-4 rounded-xl border p-4">
+        <div className="space-y-1">
+          <label className="text-xs text-muted-foreground">EMA</label>
+          <div className="flex items-center gap-2">
+            <Input
+              type="number"
+              className="w-20 h-10"
+              value={indicatorPeriod}
+              onChange={(e) => setIndicatorPeriod(e.target.value)}
+              min={1}
+              max={500}
+              placeholder="Period"
+            />
+            <Button variant="default" size="sm" onClick={addIndicator}>
+              <Plus className="size-4 mr-1" /> Add
+            </Button>
+          </div>
+        </div>
+        {activeIndicators.length > 0 && (
+          <div className="flex flex-wrap items-center gap-2">
+            {activeIndicators.map((ind) => (
+              <Badge
+                key={ind.id}
+                style={{ backgroundColor: ind.color + "20", color: ind.color, borderColor: ind.color }}
+                variant="outline"
+                className="flex items-center gap-1 px-2 py-1"
+              >
+                <span className="size-2 rounded-full" style={{ backgroundColor: ind.color }} />
+                EMA ({String(ind.params.period ?? "")})
+                <X className="size-3 cursor-pointer ml-1" onClick={() => removeIndicator(ind.id)} />
+              </Badge>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );
