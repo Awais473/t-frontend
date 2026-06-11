@@ -141,6 +141,20 @@ export function TradingChart({ trades, openTrades, analysis, liveCandle, liveSig
   const candlesRef = useRef<Candle[]>([]);
   const fullCandleDataRef = useRef<{ time: Time; open: number; high: number; low: number; close: number }[]>([]);
   const fullVolumeDataRef = useRef<{ time: Time; value: number; color: string }[]>([]);
+  const loadedEarliestRef = useRef<number | null>(null);
+  const loadingOlderRef = useRef(false);
+  const initialLoadRef = useRef(true);
+  const bufferRef = useRef(tfToSeconds(timeframe) * 200);
+  const loadMoreCandlesRef = useRef<() => void>(() => {});
+
+  function tfToSeconds(tf: string): number {
+    const m = parseInt(tf);
+    if (tf.endsWith("m")) return m * 60;
+    if (tf.endsWith("h")) return m * 3600;
+    if (tf.endsWith("d")) return m * 86400;
+    if (tf.endsWith("w")) return m * 604800;
+    return 3600;
+  }
 
   const fetchAndSetCandles = useCallback(async (sym: string, tf: string): Promise<Candle[] | undefined> => {
     try {
@@ -164,6 +178,7 @@ export function TradingChart({ trades, openTrades, analysis, liveCandle, liveSig
         const first = data.candles[0];
         const change = last.close - first.open;
         setPriceChange({ change, percent: first.open !== 0 ? (change / first.open) * 100 : 0 });
+        loadedEarliestRef.current = new Date(first.timestamp).getTime() / 1000;
         return data.candles;
       }
     } catch {}
@@ -188,6 +203,50 @@ export function TradingChart({ trades, openTrades, analysis, liveCandle, liveSig
     setPriceChange({ change, percent: first.open !== 0 ? (change / first.open) * 100 : 0 });
     return fallback;
   }, []);
+
+  const loadMoreCandles = useCallback(async () => {
+    if (loadingOlderRef.current || loadedEarliestRef.current === null) return;
+    loadingOlderRef.current = true;
+    try {
+      const earliest = loadedEarliestRef.current;
+      const data = await api.getCandlesRange(symbol, timeframe, earliest - 1, 1000);
+      if (!data.candles.length) { loadingOlderRef.current = false; return; }
+
+      const newCandles: Candle[] = [];
+      const newCandleData: { time: Time; open: number; high: number; low: number; close: number }[] = [];
+      const newVolumeData: { time: Time; value: number; color: string }[] = [];
+      const volBull = "rgba(34,197,94,0.3)";
+      const volBear = "rgba(239,68,68,0.3)";
+
+      for (const c of data.candles) {
+        const ts = new Date(c.timestamp).getTime() / 1000;
+        if (ts >= earliest) continue;
+        newCandles.push(c);
+        newCandleData.push({ time: ts as Time, open: c.open, high: c.high, low: c.low, close: c.close });
+        newVolumeData.push({ time: ts as Time, value: c.volume, color: c.close >= c.open ? volBull : volBear });
+      }
+
+      if (!newCandles.length) { loadingOlderRef.current = false; return; }
+
+      candlesRef.current = newCandles.concat(candlesRef.current);
+      fullCandleDataRef.current = newCandleData.concat(fullCandleDataRef.current);
+      fullVolumeDataRef.current = newVolumeData.concat(fullVolumeDataRef.current);
+      loadedEarliestRef.current = new Date(newCandles[0].timestamp).getTime() / 1000;
+
+      const cs = candleSeriesRef.current;
+      const vs = volumeSeriesRef.current;
+      const chart = chartRef.current;
+      if (cs && chart) {
+        const range = chart.timeScale().getVisibleLogicalRange();
+        const newCount = newCandles.length;
+        cs.setData(fullCandleDataRef.current);
+        vs?.setData(fullVolumeDataRef.current);
+        if (range) chart.timeScale().setVisibleLogicalRange({ from: range.from + newCount, to: range.to + newCount });
+      }
+    } catch {}
+    loadingOlderRef.current = false;
+  }, [symbol, timeframe]);
+  loadMoreCandlesRef.current = loadMoreCandles;
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -270,7 +329,20 @@ export function TradingChart({ trades, openTrades, analysis, liveCandle, liveSig
     const observer = new ResizeObserver(handleResize);
     observer.observe(container);
 
+    let loadTimer: ReturnType<typeof setTimeout> | null = null;
+    chart.timeScale().subscribeVisibleTimeRangeChange((range) => {
+      if (!range || loadedEarliestRef.current === null || initialLoadRef.current) return;
+      const from = range.from as number;
+      if (from < loadedEarliestRef.current + bufferRef.current) {
+        if (loadTimer) clearTimeout(loadTimer);
+        loadTimer = setTimeout(() => {
+          if (!loadingOlderRef.current) loadMoreCandlesRef.current();
+        }, 200);
+      }
+    });
+
     return () => {
+      if (loadTimer) clearTimeout(loadTimer);
       observer.disconnect();
       chart.remove();
     };
@@ -278,6 +350,8 @@ export function TradingChart({ trades, openTrades, analysis, liveCandle, liveSig
 
   useEffect(() => {
     const run = async () => {
+      initialLoadRef.current = true;
+      bufferRef.current = tfToSeconds(timeframe) * 200;
       setLoading(true);
       const c = await fetchAndSetCandles(symbol, timeframe);
       setLoading(false);
@@ -289,7 +363,13 @@ export function TradingChart({ trades, openTrades, analysis, liveCandle, liveSig
       clearOverlays();
       candleSeries.setData(fullCandleDataRef.current);
       volumeSeriesRef.current?.setData(fullVolumeDataRef.current);
-      chart.timeScale().fitContent();
+      const dataLen = fullCandleDataRef.current.length;
+      if (dataLen > 0) {
+        const to = fullCandleDataRef.current[dataLen - 1].time;
+        const from = fullCandleDataRef.current[Math.max(0, dataLen - 80)].time;
+        chart.timeScale().setVisibleRange({ from, to });
+      }
+      initialLoadRef.current = false;
       if (c) drawOverlays(c);
     };
     run();

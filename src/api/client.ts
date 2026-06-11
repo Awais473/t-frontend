@@ -32,6 +32,8 @@ async function post<T>(path: string, body: unknown): Promise<T> {
 export const api = {
   getCandles: (symbol: string, timeframe: string, limit = 500) =>
     get<{ candles: Candle[]; total: number }>(`/candles/?symbol=${symbol}&timeframe=${timeframe}&limit=${limit}`),
+  getCandlesRange: (symbol: string, timeframe: string, endTime: number, limit = 1000) =>
+    get<{ candles: Candle[]; total: number }>(`/candles/?symbol=${symbol}&timeframe=${timeframe}&limit=${limit}&end_time=${endTime}`),
   getSymbols: () => get<string[]>("/candles/symbols"),
   getStrategies: () => get<StrategyInfo[]>("/strategies/"),
   getStrategyRankings: (days?: number) =>
