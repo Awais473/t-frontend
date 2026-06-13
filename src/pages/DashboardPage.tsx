@@ -1,26 +1,28 @@
-import { useReducer, useEffect, useCallback } from "react";
+import { useEffect, useCallback } from "react";
 import { DashboardCards } from "@/components/DashboardCards";
-import { dashboardReducer, initialDashboardState } from "@/state/dashboard/reducer";
-import { fetchDashboardData } from "@/state/dashboard/actions";
+import { useAppDispatch, useAppSelector } from "@/store/hooks";
+import { fetchDashboardData } from "@/store/actions/dashboardActions";
+import { setFilterDays } from "@/store/reducers/dashboardReducer";
 
 export function DashboardPage() {
-  const [state, dispatch] = useReducer(dashboardReducer, initialDashboardState);
+  const dispatch = useAppDispatch();
+  const { rankings, trades, metrics, filterDays } = useAppSelector((s) => s.dashboard);
 
   const onFilterChange = useCallback(
-    (days: number | undefined) => dispatch({ type: "SET_FILTER_DAYS", payload: days }),
-    [],
+    (days: number | undefined) => dispatch(setFilterDays(days)),
+    [dispatch],
   );
 
   useEffect(() => {
-    fetchDashboardData(dispatch, state.filterDays);
-  }, [state.filterDays]);
+    dispatch(fetchDashboardData(filterDays));
+  }, [dispatch, filterDays]);
 
   return (
     <DashboardCards
-      rankings={state.rankings}
-      trades={state.trades}
-      metrics={state.metrics}
-      filterDays={state.filterDays}
+      rankings={rankings}
+      trades={trades}
+      metrics={metrics}
+      filterDays={filterDays}
       onFilterChange={onFilterChange}
     />
   );

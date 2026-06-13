@@ -65,13 +65,15 @@ export function AppSidebar() {
           </SidebarGroupContent>
         </SidebarGroup>
         <SidebarGroup>
-          <SidebarGroupLabel>Charts</SidebarGroupLabel>
+          <SidebarGroupLabel>Symbols</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
               <SidebarMenuItem>
-                <SidebarMenuButton tooltip="BTCUSDT">
-                  <BarChart3 />
-                  <span>BTCUSDT</span>
+                <SidebarMenuButton asChild isActive={location.pathname === "/btc"}>
+                  <a href="/btc" onClick={(e) => { e.preventDefault(); navigate("/btc"); }}>
+                    <BarChart3 />
+                    <span>BTCUSDT</span>
+                  </a>
                 </SidebarMenuButton>
               </SidebarMenuItem>
             </SidebarMenu>

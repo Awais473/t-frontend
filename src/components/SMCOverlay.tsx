@@ -76,8 +76,7 @@ export function SMCOverlay({ chart, candleSeries, smcData, visibility }: Props) 
       for (const s of smcData.structures.swing) {
         addLine(`sw_s_${s.time}_${s.tag}`, [
           { time: t(s.time), value: s.price },
-          { time: t(nowSec), value: s.price },
-        ], { color: s.bias === "bullish" ? C.sBull : C.sBear, lineWidth: 1, lineStyle: LineStyle.Solid, title: s.tag });
+        ], { color: s.bias === "bullish" ? C.sBull : C.sBear, lineWidth: 1, title: s.tag, lastValueVisible: true });
       }
     }
 
@@ -245,18 +244,19 @@ function createBoxPrimitive(smcData: SMCData, vis: SMCVisibility, nowSec: number
       }
       if (vis.zones) {
         const z = smcData.zones;
+        const zoneStartX = toX(nowSec - 86400) ?? 0;
         if (z.premium) {
           const y1 = toY(z.premium.top);
           const y2 = toY(z.premium.bottom);
           if (y1 != null && y2 != null) {
-            boxes.push({ x1: 0, x2: fullW, y1: Math.min(y1, y2), y2: Math.max(y1, y2), color: C.premium });
+            boxes.push({ x1: zoneStartX, x2: fullW, y1: Math.min(y1, y2), y2: Math.max(y1, y2), color: C.premium });
           }
         }
         if (z.discount) {
           const y1 = toY(z.discount.top);
           const y2 = toY(z.discount.bottom);
           if (y1 != null && y2 != null) {
-            boxes.push({ x1: 0, x2: fullW, y1: Math.min(y1, y2), y2: Math.max(y1, y2), color: C.discount });
+            boxes.push({ x1: zoneStartX, x2: fullW, y1: Math.min(y1, y2), y2: Math.max(y1, y2), color: C.discount });
           }
         }
         if (z.equilibrium) {
@@ -266,7 +266,7 @@ function createBoxPrimitive(smcData: SMCData, vis: SMCVisibility, nowSec: number
           const eqY1 = toY(p + halfThickness);
           const eqY2 = toY(p - halfThickness);
           if (eqY1 != null && eqY2 != null) {
-            boxes.push({ x1: 0, x2: fullW, y1: Math.min(eqY1, eqY2), y2: Math.max(eqY1, eqY2), color: C.eqFill });
+            boxes.push({ x1: zoneStartX, x2: fullW, y1: Math.min(eqY1, eqY2), y2: Math.max(eqY1, eqY2), color: C.eqFill });
           }
         }
       }

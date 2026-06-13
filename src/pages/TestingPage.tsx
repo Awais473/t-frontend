@@ -1,4 +1,4 @@
-import { useReducer, useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { RefreshCw, Radio, RadioTower, Plus, X } from "lucide-react";
 import { api } from "@/api/client";
 import { TradingChart } from "@/components/TradingChart";
@@ -6,8 +6,9 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { testingReducer, initialTestingState } from "@/state/testing/reducer";
-import { fetchTestingData, toggleActiveStrategy, fetchAnalysis } from "@/state/testing/actions";
+import { useAppDispatch, useAppSelector } from "@/store/hooks";
+import { fetchTestingData, toggleActiveStrategy, fetchAnalysis } from "@/store/actions/testingActions";
+import { setSelStrategy, setSelSymbol, setSelTimeframe, setTrades } from "@/store/reducers/testingReducer";
 import type { WsCandle, WsSignal } from "@/hooks/useWebSocket";
 import type { IndicatorInfo, ActiveIndicator } from "@/types";
 
@@ -27,24 +28,27 @@ const INDICATOR_COLORS = [
 let indicatorIdCounter = 0;
 
 export function TestingPage({ liveCandle, liveSignal }: Props) {
-  const [state, dispatch] = useReducer(testingReducer, initialTestingState);
+  const dispatch = useAppDispatch();
+  const state = useAppSelector((s) => s.testing);
   const [refreshKey, setRefreshKey] = useState(0);
   const [liveMode, setLiveMode] = useState(true);
 
   const [indicatorPeriod, setIndicatorPeriod] = useState("20");
   const [activeIndicators, setActiveIndicators] = useState<ActiveIndicator[]>([]);
+  const [showFib, setShowFib] = useState(false);
+  const [showAnalysis, setShowAnalysis] = useState(true);
 
-  useEffect(() => { fetchTestingData(dispatch); }, []);
+  useEffect(() => { dispatch(fetchTestingData()); }, [dispatch]);
 
   useEffect(() => {
     if (liveSignal) {
-      api.getTrades().then((r) => dispatch({ type: "SET_TRADES", payload: r.trades }));
+      api.getTrades().then((r) => dispatch(setTrades(r.trades)));
     }
-  }, [liveSignal]);
+  }, [liveSignal, dispatch]);
 
   useEffect(() => {
-    fetchAnalysis(dispatch, state.selStrategy, state.selSymbol, state.selTimeframe);
-  }, [state.selStrategy, state.selSymbol, state.selTimeframe]);
+    dispatch(fetchAnalysis({ strategyName: state.selStrategy, symbol: state.selSymbol, timeframe: state.selTimeframe }));
+  }, [state.selStrategy, state.selSymbol, state.selTimeframe, dispatch]);
 
   const addIndicator = useCallback(() => {
     const color = INDICATOR_COLORS[indicatorIdCounter % INDICATOR_COLORS.length];
@@ -88,12 +92,16 @@ export function TestingPage({ liveCandle, liveSignal }: Props) {
         liveCandle={liveMode ? liveCandle : undefined}
         liveSignal={liveMode ? liveSignal : undefined}
         activeIndicators={activeIndicators}
+        showFib={showFib}
+        onToggleFib={() => setShowFib((v) => !v)}
+        showAnalysis={showAnalysis}
+        onToggleAnalysis={() => setShowAnalysis((v) => !v)}
       />
 
       <div className="flex flex-wrap items-end gap-4 rounded-xl border p-4">
         <div className="space-y-1">
           <label className="text-xs text-muted-foreground">Strategy</label>
-          <Select value={state.selStrategy} onValueChange={(v) => dispatch({ type: "SET_SEL_STRATEGY", payload: v })}>
+          <Select value={state.selStrategy} onValueChange={(v) => dispatch(setSelStrategy(v))}>
             <SelectTrigger className="w-44">
               <SelectValue placeholder="Select strategy..." />
             </SelectTrigger>
@@ -106,7 +114,7 @@ export function TestingPage({ liveCandle, liveSignal }: Props) {
         </div>
         <div className="space-y-1">
           <label className="text-xs text-muted-foreground">Symbol</label>
-          <Select value={state.selSymbol} onValueChange={(v) => dispatch({ type: "SET_SEL_SYMBOL", payload: v })}>
+          <Select value={state.selSymbol} onValueChange={(v) => dispatch(setSelSymbol(v))}>
             <SelectTrigger className="w-28">
               <SelectValue />
             </SelectTrigger>
@@ -119,7 +127,7 @@ export function TestingPage({ liveCandle, liveSignal }: Props) {
         </div>
         <div className="space-y-1">
           <label className="text-xs text-muted-foreground">Timeframe</label>
-          <Select value={state.selTimeframe} onValueChange={(v) => dispatch({ type: "SET_SEL_TIMEFRAME", payload: v })}>
+          <Select value={state.selTimeframe} onValueChange={(v) => dispatch(setSelTimeframe(v))}>
             <SelectTrigger className="w-20">
               <SelectValue />
             </SelectTrigger>
@@ -133,7 +141,7 @@ export function TestingPage({ liveCandle, liveSignal }: Props) {
         <Button
           variant={isActivated ? "default" : "outline"}
           size="sm"
-          onClick={() => toggleActiveStrategy(dispatch, state.selStrategy, state.selSymbol, state.selTimeframe, isActivated)}
+          onClick={() => dispatch(toggleActiveStrategy({ strategyName: state.selStrategy, symbol: state.selSymbol, timeframe: state.selTimeframe, currentlyActive: isActivated }))}
           disabled={!state.selStrategy}
         >
           {isActivated ? "Deactivate" : "Activate"}
@@ -150,9 +158,15 @@ export function TestingPage({ liveCandle, liveSignal }: Props) {
         <Button variant="ghost" size="icon" onClick={() => setRefreshKey((k) => k + 1)} title="Refresh chart">
           <RefreshCw className="size-4" />
         </Button>
+        <Button variant={showFib ? "default" : "outline"} size="sm" className="h-8 px-2 text-xs" onClick={() => setShowFib((v) => !v)}>
+          Fib
+        </Button>
+        <Button variant={showAnalysis && !!state.analysis ? "default" : "outline"} size="sm" className="h-8 px-2 text-xs" onClick={() => setShowAnalysis((v) => !v)}>
+          Levels
+        </Button>
       </div>
 
-      <div className="flex flex-wrap items-end gap-4 rounded-xl border p-4">
+      {/* <div className="flex flex-wrap items-end gap-4 rounded-xl border p-4">
         <div className="space-y-1">
           <label className="text-xs text-muted-foreground">EMA</label>
           <div className="flex items-center gap-2">
@@ -186,7 +200,7 @@ export function TestingPage({ liveCandle, liveSignal }: Props) {
             ))}
           </div>
         )}
-      </div>
+      </div> */}
     </div>
   );
 }

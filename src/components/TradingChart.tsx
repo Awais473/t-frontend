@@ -38,15 +38,15 @@ const SYMBOLS = ["BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT"];
 const DEFAULT_SMC_VISIBILITY: SMCVisibility = {
   internal_structure: true,
   swing_structure: true,
-  swing_points: false,
+  swing_points: true,
   strong_weak: true,
   internal_order_blocks: true,
-  swing_order_blocks: false,
-  fvg: false,
+  swing_order_blocks: true,
+  fvg: true,
   eqh_eql: true,
-  zones: false,
-  mtf_levels: false,
-  trend_candles: false,
+  zones: true,
+  mtf_levels: true,
+  trend_candles: true,
 };
 
 interface Props {
@@ -57,6 +57,10 @@ interface Props {
   liveSignal?: WsSignal | null;
   refreshKey?: number;
   activeIndicators?: ActiveIndicator[];
+  showFib?: boolean;
+  onToggleFib?: () => void;
+  showAnalysis?: boolean;
+  onToggleAnalysis?: () => void;
 }
 
 function toLwtTime(ts: string): Time {
@@ -115,16 +119,15 @@ function findSwingLow(candles: Candle[], lookback = 50): { index: number; price:
 }
 
 const FIB_LEVELS = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1];
+const EMPTY_INDICATORS: ActiveIndicator[] = [];
 
-export function TradingChart({ trades, openTrades, analysis, liveCandle, liveSignal, refreshKey = 0, activeIndicators = [] }: Props) {
+export function TradingChart({ trades, openTrades, analysis, liveCandle, liveSignal, refreshKey = 0, activeIndicators = EMPTY_INDICATORS, showFib = false, showAnalysis = true }: Props) {
   const [symbol, setSymbol] = useState("BTCUSDT");
   const [timeframe, setTimeframe] = useState("1h");
   const [loading, setLoading] = useState(true);
   const [ohlcv, setOhlcv] = useState({ open: 0, high: 0, low: 0, close: 0, volume: 0 });
   const [priceChange, setPriceChange] = useState({ change: 0, percent: 0 });
-  const [showFib, setShowFib] = useState(false);
-  const [showAnalysis, setShowAnalysis] = useState(true);
-  const [showSMC, setShowSMC] = useState(false);
+  const [showSMC, setShowSMC] = useState(true);
   const [smcVisibility, setSmcVisibility] = useState<SMCVisibility>(DEFAULT_SMC_VISIBILITY);
   const [smcData, setSmcData] = useState<SMCData | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -254,7 +257,7 @@ export function TradingChart({ trades, openTrades, analysis, liveCandle, liveSig
 
     const chart = createChart(container, {
       width: container.clientWidth || 800,
-      height: 500,
+      height: container.clientHeight || 500,
       layout: {
         background: { type: ColorType.Solid, color: "#0f1115" },
         textColor: "#a0a0a0",
@@ -324,7 +327,7 @@ export function TradingChart({ trades, openTrades, analysis, liveCandle, liveSig
     });
 
     const handleResize = () => {
-      if (container) chart.resize(container.clientWidth, document.fullscreenElement ? window.innerHeight - 20 : 500);
+      if (container) chart.resize(container.clientWidth, container.clientHeight);
     };
     const observer = new ResizeObserver(handleResize);
     observer.observe(container);
@@ -426,7 +429,7 @@ export function TradingChart({ trades, openTrades, analysis, liveCandle, liveSig
       if (chartRef.current && containerRef.current) {
         setTimeout(() => {
           if (!containerRef.current) return;
-          chartRef.current!.resize(containerRef.current.clientWidth, fs ? window.innerHeight - 24 : 500);
+          chartRef.current!.resize(containerRef.current.clientWidth, fs ? window.innerHeight - 24 : containerRef.current.clientHeight);
         }, 100);
       }
     };
@@ -643,7 +646,7 @@ export function TradingChart({ trades, openTrades, analysis, liveCandle, liveSig
   }, [trades, analysis, liveSignal]);
 
   return (
-    <div className="space-y-2">
+    <div className="space-y-2 flex-1 flex flex-col min-h-0">
       <div className="flex flex-wrap items-center gap-2">
         <Select value={symbol} onValueChange={(v: string) => { setLoading(true); setSymbol(v); }}>
           <SelectTrigger className="w-32">
@@ -671,12 +674,6 @@ export function TradingChart({ trades, openTrades, analysis, liveCandle, liveSig
         </div>
 
         <div className="flex gap-1 ml-2">
-          <Button variant={showFib ? "default" : "outline"} size="sm" className="h-8 px-2 text-xs" onClick={() => setShowFib(!showFib)}>
-            Fib
-          </Button>
-          <Button variant={showAnalysis && !!analysis ? "default" : "outline"} size="sm" className="h-8 px-2 text-xs" onClick={() => setShowAnalysis(!showAnalysis)}>
-            Levels
-          </Button>
           <Button
             variant={showSMC ? "default" : "outline"}
             size="sm"
@@ -726,13 +723,13 @@ export function TradingChart({ trades, openTrades, analysis, liveCandle, liveSig
         </div>
       </div>
 
-      <div ref={chartWrapperRef} className="rounded-xl border bg-card overflow-x-hidden relative">
+      <div ref={chartWrapperRef} className="flex-1 min-h-0 rounded-xl border bg-card overflow-hidden relative">
         {loading && (
           <div className="absolute inset-0 z-10 flex items-center justify-center bg-background/60">
-            <Skeleton className="h-[500px] w-full rounded-xl" />
+            <Skeleton className="absolute inset-0 rounded-xl" />
           </div>
         )}
-        <div ref={containerRef} className="w-full" style={{ height: 500 }} />
+        <div ref={containerRef} className="w-full h-full min-h-[500px]" />
       </div>
 
       {showSMC && (
